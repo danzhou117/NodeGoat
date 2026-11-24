@@ -2,11 +2,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from nodegoat.db import connect, default_database
 from nodegoat.settings import Settings
+from nodegoat.static import StaticFilesFirst
 from nodegoat.templating import create_jinja_env
 
 
@@ -31,5 +31,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.mount("/", StaticFiles(directory=settings.assets_dir), name="assets")
+    app.add_middleware(StaticFilesFirst, directory=settings.assets_dir)
     return app

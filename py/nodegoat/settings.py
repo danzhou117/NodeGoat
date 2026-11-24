@@ -3,7 +3,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_DIR.parents[1]
+
+
+def _resource_dir(name: str) -> Path:
+    packaged = PACKAGE_DIR / name
+    return packaged if packaged.is_dir() else REPO_ROOT / "app" / name
 
 
 @dataclass(frozen=True)
@@ -11,8 +17,8 @@ class Settings:
     mongodb_uri: str = "mongodb://localhost:27017/nodegoat"
     port: int = 4000
     cookie_secret: str = "session_cookie_secret_key_here"  # PARITY: P-013
-    assets_dir: Path = REPO_ROOT / "app" / "assets"
-    views_dir: Path = REPO_ROOT / "app" / "views"
+    assets_dir: Path = _resource_dir("assets")
+    views_dir: Path = _resource_dir("views")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":

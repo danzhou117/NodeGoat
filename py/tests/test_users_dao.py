@@ -27,7 +27,7 @@ def test_seed_comes_from_db_reset(db):
 
 @pytest.mark.parametrize("email", ["a@example.com", ""])
 def test_add_user_matches_node_written_doc(db, user_dao, run_node, email):
-    run_node("py/tests/node_add_user.js", "nodeuser", "Node", "User", "Node_123", email)
+    run_node("test/parity/add-user.js", "nodeuser", "Node", "User", "Node_123", email)
     user_dao.add_user("pyuser", "Py", "User", "Py_123", email)
     node_fields = field_types(db, {"userName": "nodeuser"})
     python_fields = field_types(db, {"userName": "pyuser"})
@@ -67,7 +67,7 @@ def test_add_user_ids_come_from_counter(user_dao, db):
 
 def test_double_counter_still_yields_int32_id_like_node(db, user_dao, run_node):
     db.counters.replace_one({"_id": "userId"}, {"_id": "userId", "seq": 3.0})
-    run_node("py/tests/node_add_user.js", "nodeuser", "Node", "User", "Node_123", "")
+    run_node("test/parity/add-user.js", "nodeuser", "Node", "User", "Node_123", "")
     user_dao.add_user("pyuser", "Py", "User", "Py_123", "")
     assert field_types(db, {"userName": "nodeuser"})[0] == ("_id", "int")
     assert field_types(db, {"userName": "pyuser"})[0] == ("_id", "int")

@@ -1,7 +1,7 @@
 "use strict";
 
-const { MongoClient } = require("mongodb");
-const { UserDAO } = require("../../app/data/user-dao");
+const MongoClient = require("mongodb").MongoClient;
+const UserDAO = require("../../app/data/user-dao").UserDAO;
 
 const [userName, firstName, lastName, password, email] = process.argv.slice(2);
 

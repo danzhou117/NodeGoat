@@ -4,12 +4,11 @@ from pymongo.errors import ServerSelectionTimeoutError
 
 from nodegoat.app import create_app
 from nodegoat.settings import REPO_ROOT, Settings
-from conftest import TEST_MONGODB_URI
 
 
 @pytest.fixture
-def settings():
-    return Settings(mongodb_uri=TEST_MONGODB_URI)
+def settings(mongodb_uri):
+    return Settings(mongodb_uri=mongodb_uri)
 
 
 def test_healthz(settings):
@@ -40,11 +39,41 @@ def test_jinja_env_matches_swig_config(settings):
     assert "login.html" in env.list_templates()
 
 
-def test_lifespan_exposes_database(settings):
+def test_lifespan_exposes_database(settings, test_database_name):
     app = create_app(settings)
     with TestClient(app):
-        assert app.state.db.name == "nodegoat_pytest"
+        assert app.state.db.name == test_database_name
         assert app.state.db.client is app.state.mongo_client
+
+
+def test_routes_added_after_create_app_are_reachable(settings):
+    app = create_app(settings)
+
+    @app.get("/late")
+    def late() -> dict[str, bool]:
+        return {"late": True}
+
+    with TestClient(app) as client:
+        assert client.get("/late").json() == {"late": True}
+        assert client.get("/missing").status_code == 404
+
+
+def test_static_file_takes_precedence_over_a_route_like_express(settings):
+    app = create_app(settings)
+
+    @app.get("/favicon.ico")
+    def shadowed() -> dict[str, bool]:
+        return {"route": True}
+
+    with TestClient(app) as client:
+        response = client.get("/favicon.ico")
+    assert response.content == (REPO_ROOT / "app" / "assets" / "favicon.ico").read_bytes()
+
+
+def test_only_get_and_head_are_served_from_assets(settings):
+    with TestClient(create_app(settings)) as client:
+        assert client.head("/vendor/jquery.min.js").status_code == 200
+        assert client.post("/vendor/jquery.min.js").status_code == 404
 
 
 def test_startup_fails_when_mongo_unreachable():
