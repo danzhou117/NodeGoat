@@ -34,6 +34,11 @@ SEED_USERS = [
     },
 ]
 
+_INLINE_TAGS = {
+    "a", "abbr", "b", "bdi", "bdo", "cite", "code", "dfn", "em", "i", "kbd", "label",
+    "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var",
+}
+
 
 class _VisibleTextParser(HTMLParser):
     def __init__(self):
@@ -44,10 +49,14 @@ class _VisibleTextParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag in {"script", "style"}:
             self.ignored_depth += 1
+        elif tag not in _INLINE_TAGS:
+            self.parts.append(" ")
 
     def handle_endtag(self, tag):
         if tag in {"script", "style"} and self.ignored_depth:
             self.ignored_depth -= 1
+        elif tag not in _INLINE_TAGS:
+            self.parts.append(" ")
 
     def handle_data(self, data):
         if not self.ignored_depth:

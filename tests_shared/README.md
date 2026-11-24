@@ -33,7 +33,8 @@ tests_shared/.venv/bin/pip install -r tests_shared/requirements.txt
 Every test first runs `DB_RESET_CMD` from the repository root with
 `MONGODB_URI` exported, then checks that reseeding produced three users, three
 allocations, and a `counters.userId` sequence of 3. The suite wipes that
-database; never point it at data you care about.
+database; never point it at data you care about. The suite aborts if
+`DB_RESET_CMD` did not reset the database it inspects.
 
 ## Run against the Node app now
 
@@ -42,8 +43,10 @@ database; never point it at data you care about.
 1. Start MongoDB 4.4 on `localhost:27017` (or use another local MongoDB 4.4):
 
    ```sh
-   docker run -d --name nodegoat-mongo -p 27017:27017 mongo:4.4
+   docker run -d --name nodegoat-mongo -p 127.0.0.1:27017:27017 mongo:4.4
    ```
+
+   This MongoDB has no authentication, so publish it on loopback only.
 
 2. Install the app dependencies and start the app in a separate terminal:
 
@@ -72,12 +75,18 @@ DB_RESET_CMD="docker compose exec -T web node artifacts/db-reset.js" \
 ```
 
 The override publishes only the MongoDB service on host port 27017 so the
-Python driver can inspect it. The container Node version verified for this
-path is v12.22.12.
+Python driver can inspect it. This MongoDB has no authentication, so the
+override publishes it on loopback only. The container Node version verified
+for this path is v12.22.12.
 
-Each verified option collected 52 tests with no failures, skips, or xfails.
-Option A took approximately 7.5 seconds per run; Option B took approximately
-10.6 seconds per run.
+Use this reset only while the suite's `MONGODB_URI` is the Compose database
+(the default). `docker compose exec` does not forward the host's
+`MONGODB_URI`, so the command always resets the `web` service's own database;
+see the FastAPI section for a separate database.
+
+Each verified option collected 53 tests with no failures, skips, or xfails.
+Option A took approximately 7.85 seconds; Option B took approximately 11.10
+seconds.
 
 ## Run against the FastAPI port later
 
@@ -88,13 +97,41 @@ Option A took approximately 7.5 seconds per run; Option B took approximately
 3. Set the FastAPI address and run the unchanged suite:
 
    ```sh
-   BASE_URL=http://localhost:<port> tests_shared/.venv/bin/pytest tests_shared
+   BASE_URL=http://localhost:8000 tests_shared/.venv/bin/pytest tests_shared
    ```
 
-4. Reseeding can use the host Node runtime with `npm ci --omit=dev` and the
-   repository's `artifacts/db-reset.js`, the Compose `web` container with
-   `DB_RESET_CMD="docker compose exec -T web node artifacts/db-reset.js"`, or
-   a replacement `DB_RESET_CMD` that produces identical documents.
+   Replace `8000` with the port on which the FastAPI app listens.
+
+4. Choose the reseed command according to the database:
+   - If FastAPI shares the Compose database, the Compose reset from Option B
+     is valid:
+
+     ```sh
+     DB_RESET_CMD="docker compose exec -T web node artifacts/db-reset.js" tests_shared/.venv/bin/pytest tests_shared
+     ```
+
+     This recipe is valid only while the suite's `MONGODB_URI` is the Compose
+     database. The host default
+     `mongodb://localhost:27017/nodegoat` is the same database the `web`
+     container reaches as `mongodb://mongo:27017/nodegoat`. `docker compose
+     exec` ignores the host's `MONGODB_URI`, so this reset always targets the
+     `web` service's own database.
+   - If FastAPI uses a separate database, use the host reset after
+     `npm ci --omit=dev`:
+
+     ```sh
+     MONGODB_URI=mongodb://localhost:27017/nodegoat_fastapi DB_RESET_CMD="node artifacts/db-reset.js" tests_shared/.venv/bin/pytest tests_shared
+     ```
+
+     Alternatively, pass a container-reachable URI explicitly:
+
+     ```sh
+     MONGODB_URI=mongodb://localhost:27017/nodegoat_fastapi DB_RESET_CMD="docker compose exec -T -e MONGODB_URI=mongodb://mongo:27017/nodegoat_fastapi web node artifacts/db-reset.js" tests_shared/.venv/bin/pytest tests_shared
+     ```
+
+     `localhost` inside the container is the container itself, so the host URI
+     cannot be reused there. A replacement seed command must produce identical
+     documents and clear `counters`, or the reset guard aborts.
 
 ## Parity checklist for the port
 
@@ -137,6 +174,7 @@ Option A took approximately 7.5 seconds per run; Option B took approximately
 - `test_profile.py`: profile rendering, updates, blank fields, and routing validation.
 - `test_memos.py`: rendering, Markdown storage, ordering, timestamps, and global visibility.
 - `test_benefits.py`: admin listing and updates plus missing non-admin authorization.
+- `test_helpers.py`: visible text extraction around adjacent block and inline elements.
 
 Not covered: the allocations `threshold` filter, `/research`, `/learn`,
 `/tutorial`, CSRF, and security headers.

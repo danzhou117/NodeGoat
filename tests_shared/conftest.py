@@ -16,23 +16,27 @@ REPO_ROOT = TESTS_DIR.parent
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:4000").rstrip("/")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017/nodegoat")
 DB_RESET_CMD = os.environ.get("DB_RESET_CMD", "node artifacts/db-reset.js")
+RESET_SENTINEL = {"_id": "tests_shared_reset_sentinel"}
 
 
 @pytest.fixture(scope="session", autouse=True)
 def app_is_available():
     deadline = time.monotonic() + 10
-    last_error = None
+    last_problem = "no response"
     while time.monotonic() < deadline:
         try:
             with httpx.Client(base_url=BASE_URL, timeout=2.0) as client:
                 response = client.get("/login")
-                if response.status_code:
-                    return
+            if response.status_code == 200:
+                return
+            last_problem = f"GET /login returned HTTP {response.status_code}"
         except httpx.HTTPError as error:
-            last_error = error
+            last_problem = str(error)
         time.sleep(0.1)
-    detail = f" Last error: {last_error}" if last_error else ""
-    pytest.exit(f"NodeGoat is unreachable at BASE_URL={BASE_URL}.{detail}", returncode=2)
+    pytest.exit(
+        f"NodeGoat is not ready at BASE_URL={BASE_URL}: {last_problem}",
+        returncode=2,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -51,6 +55,7 @@ def db():
 def reseed_db(db):
     environment = os.environ.copy()
     environment["MONGODB_URI"] = MONGODB_URI
+    db.counters.replace_one(RESET_SENTINEL, RESET_SENTINEL, upsert=True)
     try:
         result = subprocess.run(
             shlex.split(DB_RESET_CMD),
@@ -62,11 +67,19 @@ def reseed_db(db):
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
+        db.counters.delete_one(RESET_SENTINEL)
         pytest.fail(f"Database reset failed: {error}")
+    sentinel_survived = db.counters.delete_one(RESET_SENTINEL).deleted_count
     if result.returncode:
         pytest.fail(
             "Database reset failed with exit code "
             f"{result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    if sentinel_survived:
+        pytest.exit(
+            f"DB_RESET_CMD ran but did not reset the database '{db.name}' selected by MONGODB_URI. "
+            "The reset command and the suite must target the same database.",
+            returncode=2,
         )
     assert db.users.count_documents({}) == 3
     assert db.allocations.count_documents({}) == 3
